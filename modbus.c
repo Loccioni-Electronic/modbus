@@ -33,12 +33,13 @@
 //#include "ftm.h"
 //#include "uart.h"
 #include "libohiboard.h"
-//#include "var_mapping.h"
+#include "modbus.h"
+#include "var_mapping.h"
 
 
 #define SET_VAR16(X)    (*X<<8&0xFF00)|*(X+1)
-//#define U16_H(X)		(uint8_t) 0x00FF&(X>>8)
-//#define U16_L(X)		(uint8_t) 0x00FF&X
+#define U16_H(X)		(uint8_t) 0x00FF&(X>>8)
+#define U16_L(X)		(uint8_t) 0x00FF&X
 #define POL_G            0xA001//generator polynomial
 
 
@@ -69,7 +70,7 @@ System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
 	    COM_config.dataBits     = UART_DATABITS_EIGHT;
 	    COM_config.parity       = UART_PARITY_NONE;
 	    COM_config.baudrate     = Bus_config->Baudrate;
-	    COM_config.stop_bit     =1;
+	    COM_config.stop     =UART_STOPBITS_ONE;
 	    COM_config.oversampling=16;
 	    break;
 	}
@@ -118,7 +119,7 @@ void Set_End_Message(void)
     ModBus_interface.pos=0;
     //LED_GREEN_ON();
     }
-    FTM_Interrupt_stop(ModBus_interface.ftm_Handler);
+	Ftm_disableInterrupt(ModBus_interface.ftm_Handler);
 	//READY_LOW();
 }
 
@@ -139,7 +140,7 @@ void Int_function()
     //put to zero timeout flag
     ModBus_interface.timeout_flag=0;
     //start count pheriferal
-    FTM_Interrupt_start(ModBus_interface.ftm_Handler);
+    Ftm_enableInterrupt(ModBus_interface.ftm_Handler);
 }
 
 void ModBus_listener()
