@@ -25,16 +25,10 @@
 /**
  * @file modbus.h
  * @author Matteo Civale <matteo.civale@gmail.com>
- * @brief modbus  definition for KL25Z4 and FRDM-KL25Z.
+ * @brief modbus  definition for KL25Z4 and FRDM-KL25Z;K64F12 and FRDMK64F.
  */
 #ifndef MOD_BUS_H_
 #define MOD_BUS_H_
-
-//-------------------------------------------------------------------
-//void (*function_vector[10])(int u);
-//-------------------------------------------------------------------
-
-
 
 //include library
 #include "libohiboard.h"
@@ -43,6 +37,12 @@
 #define RX_BUFFER_LEN 30
 
 static unsigned short modbus_16_tbl[];
+
+typedef enum
+{
+    RS232,
+	RS485
+}PhysicalLayer_Type;
 
 //define reciver buffer type
 typedef union //RX_buffer
@@ -113,6 +113,8 @@ typedef struct _Modbus_Config_Type
     Uart_DeviceHandle COM;
 
     Ftm_DeviceHandle Counter;
+
+    PhysicalLayer_Type PLayer;
 
 
 

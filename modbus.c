@@ -29,9 +29,7 @@
  *
  */
 
-//#include "MOD_BUS.h"
-//#include "ftm.h"
-//#include "uart.h"
+
 #include "libohiboard.h"
 #include "modbus.h"
 #include "var_mapping.h"
@@ -70,17 +68,29 @@ System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
 	    COM_config.dataBits     = UART_DATABITS_EIGHT;
 	    COM_config.parity       = UART_PARITY_NONE;
 	    COM_config.baudrate     = Bus_config->Baudrate;
-	    COM_config.stop     =UART_STOPBITS_ONE;
-	    COM_config.oversampling=16;
+	    COM_config.stop         = UART_STOPBITS_ONE;
+
+        #if defined(LIBOHIBOARD_KL25Z4)
+	        COM_config.oversampling=16;
+        #endif
+
 	    break;
 	}
 //pin uart setting
     COM_config.rxPin=Bus_config->RX;
     COM_config.txPin=Bus_config->TX;
-    error=Gpio_config (Bus_config->DE, GPIO_PINS_OUTPUT);
-    if(error) return error;
-    ModBus_interface.DE=Bus_config->DE;
-    Gpio_set (ModBus_interface.DE);
+
+    if (Bus_config->PLayer==RS485)
+    {
+        error=Gpio_config (Bus_config->DE, GPIO_PINS_OUTPUT);
+        if(error) return error;
+        ModBus_interface.DE=Bus_config->DE;
+        Gpio_set (ModBus_interface.DE);
+    }
+	else
+    	ModBus_interface.DE=GPIO_PINS_NONE;
+
+
 //open serial interface
 
     error=Uart_open (Bus_config->COM, Int_function,&COM_config);
@@ -93,14 +103,15 @@ System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
     ModBus_interface.uart_handler=Bus_config->COM;
 
 
-//inizialize counter for temporization
+//initialize counter for temporization
 
 //set counter configuration
 
     FTM_config.mode=FTM_MODE_FREE;
     FTM_config.timerFrequency=COM_config.baudrate/(11*3.5);
+    FTM_config.initCounter=0;
     Ftm_init (Bus_config->Counter,Set_End_Message,&FTM_config);
-
+ 
 
     ModBus_interface.ftm_Handler=Bus_config->Counter;
     ModBus_interface.ID=Bus_config->ID;
@@ -110,37 +121,34 @@ System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
 
 void Set_End_Message(void)
 {
-	//READY_TOG();
+
 	if(ModBus_interface.state==IN_RECEPTION)
     {
     ModBus_interface.timeout_flag=1;
     ModBus_interface.state=NEW_MESSAGE;
     ModBus_interface.length=ModBus_interface.pos;
     ModBus_interface.pos=0;
-    //LED_GREEN_ON();
     }
 	Ftm_disableInterrupt(ModBus_interface.ftm_Handler);
-	//READY_LOW();
+
 }
 
 void Int_function()
 {
     System_Errors error;
     uint8_t ID;
-    //READY_HIGHT();
-    //LED_BLUE_ON();
     //put the new recived byte in the buffer
     error=Uart_getChar (ModBus_interface.uart_handler, &ModBus_interface.buffer.Raw[ModBus_interface.pos]);
     if(error==ERRORS_UART_PARITY) ModBus_interface.error_parity_flag|=1;
     //update position pointer
     ModBus_interface.pos++;
     ModBus_interface.pos=ModBus_interface.pos%RX_BUFFER_LEN;
-    //LED_RED_ON();
     ModBus_interface.state=IN_RECEPTION;
     //put to zero timeout flag
     ModBus_interface.timeout_flag=0;
-    //start count pheriferal
+    //start count peripheral
     Ftm_enableInterrupt(ModBus_interface.ftm_Handler);
+    
 }
 
 void ModBus_listener()
@@ -148,6 +156,7 @@ void ModBus_listener()
     uint16_t crc_code_rx;
     uint16_t crc_code_calc;
     uint8_t crc_flag;
+    
     if(ModBus_interface.state==NEW_MESSAGE)
     {
 
@@ -161,27 +170,29 @@ void ModBus_listener()
 
         if((!ModBus_interface.error_parity_flag)&&(crc_flag))
         {//se non ci sono errori
-        //LED_RED_ON();
-        ModBus_analizeFrame();
-        //TODO: analizza il paccheto
+        
+           ModBus_analizeFrame();
+           //TODO: analizza il paccheto
         }
-        //Uart_sendData (UART0,ModBus_interface.buffer.Raw,ModBus_interface.length);
-        //LED_RED_ON();
-
-        ModBus_interface.error_parity_flag=0;
+           //Uart_sendData (UART0,ModBus_interface.buffer.Raw,ModBus_interface.length);
+           ModBus_interface.error_parity_flag=0;
     }
 
 	if(ModBus_interface.Log_erroro!=NO_ERROR)
 	{
-    ModBus_interface.buffer.get_Field.Function|=0x80;
-    ModBus_interface.buffer.get_Field.Data[0]=ModBus_interface.Log_erroro;
-    crc_code_calc=CRC16_Check(ModBus_interface.buffer.Raw,3);
-    ModBus_interface.buffer.get_Field.Data[1]=U16_H(crc_code_calc);
-    ModBus_interface.buffer.get_Field.Data[2]=U16_L(crc_code_calc);
-    Gpio_clear (ModBus_interface.DE);
-    Uart_sendData (ModBus_interface.uart_handler,ModBus_interface.buffer.Raw,5);
-    Gpio_set (ModBus_interface.DE);
-    ModBus_interface.Log_erroro=NO_ERROR;
+       ModBus_interface.buffer.get_Field.Function|=0x80;
+       ModBus_interface.buffer.get_Field.Data[0]=ModBus_interface.Log_erroro;
+       crc_code_calc=CRC16_Check(ModBus_interface.buffer.Raw,3);
+       ModBus_interface.buffer.get_Field.Data[1]=U16_H(crc_code_calc);
+       ModBus_interface.buffer.get_Field.Data[2]=U16_L(crc_code_calc);
+	   /* Pull down the DE pin */
+       if (ModBus_interface.DE!=GPIO_PINS_NONE)  
+		   Gpio_clear (ModBus_interface.DE);
+       Uart_sendData (ModBus_interface.uart_handler,ModBus_interface.buffer.Raw,5);
+	   /* Pull up the DE pin */
+       if (ModBus_interface.DE!=GPIO_PINS_NONE)
+		   Gpio_set (ModBus_interface.DE);
+       ModBus_interface.Log_erroro=NO_ERROR;
     }
 
 }
@@ -217,7 +228,7 @@ void ModBus_analizeFrame(void)
     case 3:
     case 4: //request 16 bit data register
         mem_pos=SET_VAR16(ModBus_interface.buffer.get_Field.Data);
-        num_word=SET_VAR16(&ModBus_interface.buffer.get_Field.Data[2]);//locatio 2-3
+        num_word=SET_VAR16(&ModBus_interface.buffer.get_Field.Data[2]);//location 2-3
         num_byte=num_word*2;
         if((mem_pos+num_word)>MAX_MAP_ADDRESS)
         {
@@ -236,7 +247,7 @@ void ModBus_analizeFrame(void)
 	    ModBus_interface.buffer.get_Field.Data[j+1]=U16_L(*Map[i]);
 	    j=j+2;
         }
-        //calcuate and put in the message the CRC message code
+        //calculate and put in the message the CRC message code
         crc_code=CRC16_Check(ModBus_interface.buffer.Raw,num_byte+3);//add two address and function byte and #byte
         ModBus_interface.buffer.get_Field.Data[j]=U16_H(crc_code);
         ModBus_interface.buffer.get_Field.Data[j+1]=U16_L(crc_code);
