@@ -25,10 +25,16 @@
 /**
  * @file modbus.h
  * @author Matteo Civale <matteo.civale@gmail.com>
- * @brief modbus  definition for KL25Z4 and FRDM-KL25Z;K64F12 and FRDMK64F.
+ * @brief modbus  definition for KL25Z4 and FRDM-KL25Z.
  */
 #ifndef MOD_BUS_H_
 #define MOD_BUS_H_
+
+//-------------------------------------------------------------------
+//void (*function_vector[10])(int u);
+//-------------------------------------------------------------------
+
+
 
 //include library
 #include "libohiboard.h"

@@ -29,10 +29,13 @@
  *
  */
 
-
+//#include "MOD_BUS.h"
+//#include "ftm.h"
+//#include "uart.h"
 #include "libohiboard.h"
 #include "modbus.h"
 #include "var_mapping.h"
+#include "configuration.h"
 
 
 #define SET_VAR16(X)    (*X<<8&0xFF00)|*(X+1)
@@ -87,13 +90,19 @@ System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
         ModBus_interface.DE=Bus_config->DE;
         Gpio_set (ModBus_interface.DE);
     }
-	else
-    	ModBus_interface.DE=GPIO_PINS_NONE;
 
 
 //open serial interface
+#if defined (LIBOHIBOARD_K12D5)      || \
+    defined (LIBOHIBOARD_K64F12)     || \
+	defined (LIBOHIBOARD_FRDMK64F)
 
-    error=Uart_open (Bus_config->COM, Int_function,&COM_config);
+    COM_config.callbackRx=Int_function;
+    error=Uart_open (Bus_config->COM, &COM_config);
+#else
+    error=Uart_open (Bus_config->COM, Int_function, &COM_config);
+#endif
+
     if(error) return error;
 
     ModBus_interface.config=Bus_config;
@@ -110,8 +119,16 @@ System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
     FTM_config.mode=FTM_MODE_FREE;
     FTM_config.timerFrequency=COM_config.baudrate/(11*3.5);
     FTM_config.initCounter=0;
+
+#if defined (LIBOHIBOARD_K12D5)      || \
+    defined (LIBOHIBOARD_K64F12)     || \
+	defined (LIBOHIBOARD_FRDMK64F)
+
+    FTM_config.fault[0].pin=FTM_FAULTPINS_STOP;
+    FTM_config.triggerChannel=FTM_TRIGGER_NOCH;
+#endif
     Ftm_init (Bus_config->Counter,Set_End_Message,&FTM_config);
- 
+    //Ftm_disableInterrupt (Bus_config->Counter);//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
     ModBus_interface.ftm_Handler=Bus_config->Counter;
     ModBus_interface.ID=Bus_config->ID;
@@ -121,6 +138,8 @@ System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
 
 void Set_End_Message(void)
 {
+	//READY_TOG();
+	//TEST_PIN_HIGH();
 
 	if(ModBus_interface.state==IN_RECEPTION)
     {
@@ -128,27 +147,35 @@ void Set_End_Message(void)
     ModBus_interface.state=NEW_MESSAGE;
     ModBus_interface.length=ModBus_interface.pos;
     ModBus_interface.pos=0;
+    //LED_GREEN_ON();
     }
 	Ftm_disableInterrupt(ModBus_interface.ftm_Handler);
-
+	//TEST_PIN_2_LOW();
+	//READY_LOW();
+	//TEST_PIN_LOW();
 }
 
 void Int_function()
 {
     System_Errors error;
     uint8_t ID;
+    //READY_HIGHT();
+    //LED_BLUE_ON();
+    //TEST_PIN_HIGH();
+    //TEST_PIN_2_HIGH();
     //put the new recived byte in the buffer
     error=Uart_getChar (ModBus_interface.uart_handler, &ModBus_interface.buffer.Raw[ModBus_interface.pos]);
     if(error==ERRORS_UART_PARITY) ModBus_interface.error_parity_flag|=1;
     //update position pointer
     ModBus_interface.pos++;
     ModBus_interface.pos=ModBus_interface.pos%RX_BUFFER_LEN;
+    //LED_RED_ON();
     ModBus_interface.state=IN_RECEPTION;
     //put to zero timeout flag
     ModBus_interface.timeout_flag=0;
     //start count peripheral
     Ftm_enableInterrupt(ModBus_interface.ftm_Handler);
-    
+    //TEST_PIN_LOW();
 }
 
 void ModBus_listener()
@@ -156,11 +183,13 @@ void ModBus_listener()
     uint16_t crc_code_rx;
     uint16_t crc_code_calc;
     uint8_t crc_flag;
-    
+    //Uart_putChar(UART3, '3');
     if(ModBus_interface.state==NEW_MESSAGE)
     {
 
         ModBus_interface.state=IDLE;
+      //  Uart_putChar(UART3, 'M');//--------------------
+
         crc_code_rx=(ModBus_interface.buffer.Raw[ModBus_interface.length-2]<<8)|(ModBus_interface.buffer.Raw[ModBus_interface.length-1]);
         crc_code_calc=CRC16_Check(ModBus_interface.buffer.Raw,ModBus_interface.length-2);
         crc_flag=0;
@@ -170,29 +199,27 @@ void ModBus_listener()
 
         if((!ModBus_interface.error_parity_flag)&&(crc_flag))
         {//se non ci sono errori
-        
-           ModBus_analizeFrame();
-           //TODO: analizza il paccheto
+        //LED_RED_ON();
+        ModBus_analizeFrame();
+        //TODO: analizza il paccheto
         }
-           //Uart_sendData (UART0,ModBus_interface.buffer.Raw,ModBus_interface.length);
-           ModBus_interface.error_parity_flag=0;
+        //Uart_sendData (UART0,ModBus_interface.buffer.Raw,ModBus_interface.length);
+        //LED_RED_ON();
+
+        ModBus_interface.error_parity_flag=0;
     }
 
 	if(ModBus_interface.Log_erroro!=NO_ERROR)
 	{
-       ModBus_interface.buffer.get_Field.Function|=0x80;
-       ModBus_interface.buffer.get_Field.Data[0]=ModBus_interface.Log_erroro;
-       crc_code_calc=CRC16_Check(ModBus_interface.buffer.Raw,3);
-       ModBus_interface.buffer.get_Field.Data[1]=U16_H(crc_code_calc);
-       ModBus_interface.buffer.get_Field.Data[2]=U16_L(crc_code_calc);
-	   /* Pull down the DE pin */
-       if (ModBus_interface.DE!=GPIO_PINS_NONE)  
-		   Gpio_clear (ModBus_interface.DE);
-       Uart_sendData (ModBus_interface.uart_handler,ModBus_interface.buffer.Raw,5);
-	   /* Pull up the DE pin */
-       if (ModBus_interface.DE!=GPIO_PINS_NONE)
-		   Gpio_set (ModBus_interface.DE);
-       ModBus_interface.Log_erroro=NO_ERROR;
+    ModBus_interface.buffer.get_Field.Function|=0x80;
+    ModBus_interface.buffer.get_Field.Data[0]=ModBus_interface.Log_erroro;
+    crc_code_calc=CRC16_Check(ModBus_interface.buffer.Raw,3);
+    ModBus_interface.buffer.get_Field.Data[1]=U16_H(crc_code_calc);
+    ModBus_interface.buffer.get_Field.Data[2]=U16_L(crc_code_calc);
+    //Gpio_clear (ModBus_interface.DE);
+    Uart_sendData (ModBus_interface.uart_handler,ModBus_interface.buffer.Raw,5);
+    //Gpio_set (ModBus_interface.DE);
+    ModBus_interface.Log_erroro=NO_ERROR;
     }
 
 }
