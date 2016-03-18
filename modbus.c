@@ -1,7 +1,9 @@
-/* Copyright (C) 2014-2015 A. C. Open Hardware Ideas Lab
+/******************************************************************************
+ * Modbus Library
+ * Copyright (C) 2015-2016 AEA s.r.l. Loccioni Group - Elctronic Design Dept.
  *
  * Authors:
- *  Matteo Civale <matteo.civale@gmail.com>
+ *  Matteo Civale <m.civale@loccioni.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,332 +22,424 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
+ *
  ******************************************************************************/
 
 /**
  * @file modbus.c
- * @author Matteo Civale <matteo.civale@gmail.com>
- * @brief modbus  implementation for KL25Z4 and FRDM-KL25Z.
- *
+ * @author Matteo Civale <m.civale@loccioni.com>
+ * @brief Modbus implementation
  */
 
-
-#include "libohiboard.h"
 #include "modbus.h"
-#include "var_mapping.h"
+//#include "var_mapping.h"
 
+static unsigned short Modbus_crc16_tbl[];
 
 #define SET_VAR16(X)    (*X<<8&0xFF00)|*(X+1)
 #define U16_H(X)		(uint8_t) 0x00FF&(X>>8)
 #define U16_L(X)		(uint8_t) 0x00FF&X
-#define POL_G            0xA001//generator polynomial
+#define POL_G           0xA001//generator polynomial
 
+#define MODBUS_MAX_DEVICE     4
 
+void Modbus_uartIsr0 (void);
+void Modbus_uartIsr1 (void);
+void Modbus_uartIsr2 (void);
+void Modbus_uartIsr3 (void);
 
+void Modbus_counterIsr0 (void);
+void Modbus_counterIsr1 (void);
+void Modbus_counterIsr2 (void);
+void Modbus_counterIsr3 (void);
 
-void Int_function(void);
-void Set_End_Message(void);
+typedef struct Modbus_RegisteredDevice
+{
+    Modbus_Device *dev;
+    void (* uartIsr)(void);
+    void (* counterIsr)(void);
+    bool enabled;
+} Modbus_RegisteredDevice;
 
-ModBus_handler ModBus_interface={
-    .state=IDLE,
-    .interface_is_set=0,
+static Modbus_RegisteredDevice Modbus_devs[] =
+{
+        {0,Modbus_uartIsr0,Modbus_counterIsr0,FALSE},
+        {0,Modbus_uartIsr1,Modbus_counterIsr1,FALSE},
+        {0,Modbus_uartIsr2,Modbus_counterIsr2,FALSE},
+        {0,Modbus_uartIsr3,Modbus_counterIsr3,FALSE},
 };
 
-
-System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
+static uint16_t Modbus_crcCheck (uint8_t *head, uint8_t length)
 {
-    Uart_Config COM_config;
+    uint8_t combValue;
+    uint16_t crc = 0xFFFF;
+
+    for (uint8_t n = 0; n < length; ++n)
+    {
+        combValue = (crc>>8) ^ head[n];
+        crc = (crc<<8) ^ Modbus_crc16_tbl[combValue & 0x00FF];
+    }
+    return (uint16_t)crc;
+}
+
+static void Modbus_sendLogicalError (Modbus_Device *dev, Modbus_LogicError error)
+{
+    dev->logicError = error;
+}
+
+static void Modbus_analizeFrame (Modbus_Device *dev)
+{
+    uint16_t memPosition;
+    uint16_t numWord;
+    uint16_t crcCode;
+    uint8_t numByte;
+    uint16_t i,j;
+
+    uint8_t rxId = dev->buffer.field.address;
+
+    if ((rxId == 0) || (rxId == dev->id))
+    {
+        switch (dev->buffer.field.function)
+        {
+        case 3:
+        case 4: // request 16 bit data register
+            memPosition = SET_VAR16(dev->buffer.field.data);
+            numWord = SET_VAR16(&dev->buffer.field.data[2]);//location 2-3
+            numByte = numWord * 2;
+            if ((memPosition + numWord) > LOCCIONI_MODBUS_MAPSIZE)
+            {
+                Modbus_sendLogicalError(dev,MODBUS_LOGICERROR_ILLEGAL_DATA_ADDRESS);
+                return;
+            }
+
+            // start to compile transmitting buffer
+            dev->buffer.field.data[0] = numByte;
+            j=1; // start pos
+
+            for (i = memPosition; i < memPosition + numWord; i++)
+            {
+                dev->buffer.field.data[j]   = U16_H(dev->map[i]);
+                dev->buffer.field.data[j+1] = U16_L(dev->map[i]);
+                j += 2;
+            }
+
+            // calculate and put in the message the CRC message code
+            // add two address and function byte and #byte
+            crcCode = Modbus_crcCheck(dev->buffer.raw,numByte+3);
+            dev->buffer.field.data[j] = U16_H(crcCode);
+            dev->buffer.field.data[j+1] = U16_L(crcCode);
+            dev->length = numByte + 5; // 2 crc16 byte + address+function+#byte
+            Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+            break;
+        case 5:
+
+            break;
+
+        case 6: // set a single 16 bit var
+            memPosition = SET_VAR16(dev->buffer.field.data);
+            dev->map[memPosition] = SET_VAR16(&dev->buffer.field.data[2]);
+            // response with the same trasmitted message
+            Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+            break;
+
+        case 7: // read status
+            dev->buffer.field.data[0] = dev->status;
+            // add two address and function byte
+            crcCode = Modbus_crcCheck(dev->buffer.raw,3);
+            dev->buffer.field.data[1] = U16_H(crcCode);
+            dev->buffer.field.data[2] = U16_L(crcCode);
+            dev->length = 5; //2 crc16 byte + address+function
+            Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+            break;
+
+        case 16: //set a multiple 16 bit var
+
+            memPosition = SET_VAR16(&dev->buffer.field.data[0]); // location 0-1
+            numWord = SET_VAR16(&dev->buffer.field.data[2]);     // location 2-3
+            numByte = dev->buffer.field.data[4];                 // location 4
+
+            // check address error
+            if ((memPosition+numWord) > LOCCIONI_MODBUS_MAPSIZE)
+            {
+                Modbus_sendLogicalError(dev,MODBUS_LOGICERROR_ILLEGAL_DATA_ADDRESS);
+                return;
+            }
+
+            j = 5; // start location
+            for (i = memPosition; i < memPosition+numWord; i++)
+            {
+                dev->map[i] = SET_VAR16(&dev->buffer.field.data[j]);
+                j += 2;
+            }
+
+            dev->buffer.field.data[2] = U16_H(numWord);
+            dev->buffer.field.data[3] = U16_L(numWord);
+
+            // Add two address and function byte
+            crcCode = Modbus_crcCheck(dev->buffer.raw,6);
+            dev->buffer.field.data[4] = U16_H(crcCode);
+            dev->buffer.field.data[5] = U16_L(crcCode);
+            dev->length = 8; // 2 crc16 byte + address+function
+            Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+            break;
+
+        case 17:
+            break;
+        }
+    }
+}
+
+Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
+{
+    Uart_Config comConfig;
+    Ftm_Config counterConfig;
     System_Errors error;
-    Ftm_Config FTM_config;
+    uint8_t position = 0, i;
+    bool isFreeDevice = FALSE;
 
-//set clock surce
-	COM_config.clockSource  = UART_CLOCKSOURCE_BUS;
+    /* Search free modbus device */
+    for (i = 0; i < MODBUS_MAX_DEVICE; ++i)
+    {
+        if (Modbus_devs[i].enabled == FALSE)
+        {
+            position = i;
+            Modbus_devs[i].enabled = TRUE;
+            Modbus_devs[i].dev = dev;
+            isFreeDevice = TRUE;
+        }
+    }
 
-//set boud parity and data length
-	switch (Bus_config->Serial_Config)
+    if (!isFreeDevice) return MODBUS_ERRORS_NO_FREE_DEVICE;
+
+    /* set clock source */
+	comConfig.clockSource  = UART_CLOCKSOURCE_BUS;
+
+	/* set baudrate, parity and data length */
+	switch (config->comConfig)
 	{
-    case S1_D8_Odd_Stop1:
-	    COM_config.dataBits     = UART_DATABITS_EIGHT;
-	    COM_config.parity       = UART_PARITY_NONE;
-	    COM_config.baudrate     = Bus_config->Baudrate;
-	    COM_config.stop         = UART_STOPBITS_ONE;
+    case MODBUS_SERIALCONFIG_1_8_1_ODD:
+        comConfig.dataBits     = UART_DATABITS_EIGHT;
+        comConfig.parity       = UART_PARITY_NONE;
+        comConfig.baudrate     = config->baudrate;
+        comConfig.stop         = UART_STOPBITS_ONE;
 
-        #if defined(LIBOHIBOARD_KL25Z4)
-	        COM_config.oversampling=16;
-        #endif
-
+#if defined(LIBOHIBOARD_KL25Z4)
+        comConfig.oversampling = 16;
+#endif
 	    break;
 	}
-//pin uart setting
-    COM_config.rxPin=Bus_config->RX;
-    COM_config.txPin=Bus_config->TX;
 
-    if (Bus_config->PLayer==RS485)
+	/* UART pin setting */
+	comConfig.rxPin = config->rx;
+	comConfig.txPin = config->tx;
+
+    if (config->phy == MODBUS_PHYSICALTYPE_RS485)
     {
-        error=Gpio_config (Bus_config->DE, GPIO_PINS_OUTPUT);
+        error = Gpio_config (config->de, GPIO_PINS_OUTPUT);
         if(error) return error;
-        ModBus_interface.DE=Bus_config->DE;
-        Gpio_set (ModBus_interface.DE);
+        dev->de = config->de;
+        /* Transmission line free */
+        Gpio_set (dev->de);
     }
 	else
-    	ModBus_interface.DE=GPIO_PINS_NONE;
+	{
+    	dev->de = GPIO_PINS_NONE;
+	}
 
+    /* Open serial interface */
+    comConfig.callbackRx = Modbus_devs[position].uartIsr;
+    error = Uart_open (config->com, &comConfig);
 
-//open serial interface
-#if defined (LIBOHIBOARD_K12D5)      || \
-    defined (LIBOHIBOARD_K64F12)     || \
+    if (error != ERRORS_NO_ERROR) return MODBUS_ERRORS_UART_OPEN;
+
+    dev->com = config->com;
+    dev->state = MODBUS_STATE_IDLE;
+    dev->position = 0;
+
+    /* initialize counter for temporization */
+    counterConfig.mode = FTM_MODE_FREE;
+    counterConfig.timerFrequency = comConfig.baudrate / (11 * 3.5);
+    counterConfig.initCounter = 0;
+
+#if defined (LIBOHIBOARD_K64F12)     || \
 	defined (LIBOHIBOARD_FRDMK64F)
 
-    COM_config.callbackRx=Int_function;
-    error=Uart_open (Bus_config->COM, &COM_config);
-#else
-    error=Uart_open (Bus_config->COM, Int_function, &COM_config);
+    counterConfig.fault[0].pin = FTM_FAULTPINS_STOP;
+    counterConfig.triggerChannel = FTM_TRIGGER_NOCH;
 #endif
 
+    Ftm_init(config->counter, Modbus_devs[position].counterIsr, &counterConfig);
+    dev->counter = config->counter;
 
-//    error=Uart_open (Bus_config->COM, Int_function,&COM_config);
-    if(error) return error;
+    dev->id = config->id;
 
-    ModBus_interface.config=Bus_config;
-    ModBus_interface.state=IDLE;
-    ModBus_interface.pos=0;
-
-    ModBus_interface.uart_handler=Bus_config->COM;
-
-
-//initialize counter for temporization
-
-//set counter configuration
-
-    FTM_config.mode=FTM_MODE_FREE;
-    FTM_config.timerFrequency=COM_config.baudrate/(11*3.5);
-    FTM_config.initCounter=0;
-
-#if defined (LIBOHIBOARD_K12D5)      || \
-    defined (LIBOHIBOARD_K64F12)     || \
-	defined (LIBOHIBOARD_FRDMK64F)
-
-    FTM_config.fault[0].pin=FTM_FAULTPINS_STOP;
-    FTM_config.triggerChannel=FTM_TRIGGER_NOCH;
-#endif
-    Ftm_init (Bus_config->Counter,Set_End_Message,&FTM_config);
-    //Ftm_disableInterrupt (Bus_config->Counter);//<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-
-    ModBus_interface.ftm_Handler=Bus_config->Counter;
-    ModBus_interface.ID=Bus_config->ID;
-
-    return error;
+    return MODBUS_ERRORS_NO_ERROR;
 }
 
-void Set_End_Message(void)
-{
-	//READY_TOG();
-	//TEST_PIN_HIGH();
-
-	if(ModBus_interface.state==IN_RECEPTION)
-    {
-    ModBus_interface.timeout_flag=1;
-    ModBus_interface.state=NEW_MESSAGE;
-    ModBus_interface.length=ModBus_interface.pos;
-    ModBus_interface.pos=0;
-    //LED_GREEN_ON();
-    }
-	Ftm_disableInterrupt(ModBus_interface.ftm_Handler);
-	//TEST_PIN_2_LOW();
-	//READY_LOW();
-	//TEST_PIN_LOW();
-}
-
-void Int_function()
+static void Modbus_uartIsr (Modbus_Device *dev)
 {
     System_Errors error;
-    uint8_t ID;
-    //READY_HIGHT();
-    //LED_BLUE_ON();
-    //TEST_PIN_HIGH();
-    //TEST_PIN_2_HIGH();
-    //put the new recived byte in the buffer
-    error=Uart_getChar (ModBus_interface.uart_handler, &ModBus_interface.buffer.Raw[ModBus_interface.pos]);
-    if(error==ERRORS_UART_PARITY) ModBus_interface.error_parity_flag|=1;
-    //update position pointer
-    ModBus_interface.pos++;
-    ModBus_interface.pos=ModBus_interface.pos%RX_BUFFER_LEN;
-    //LED_RED_ON();
-    ModBus_interface.state=IN_RECEPTION;
-    //put to zero timeout flag
-    ModBus_interface.timeout_flag=0;
-    //start count peripheral
-    Ftm_enableInterrupt(ModBus_interface.ftm_Handler);
-    //TEST_PIN_LOW();
+    uint8_t id;
+
+    // put the new received byte in the buffer
+    error = Uart_getChar (dev->com, &dev->buffer.raw[dev->position]);
+    if (error == ERRORS_UART_PARITY) dev->errorParity |= 1;
+    // update position pointer
+    dev->position++;
+    dev->position = dev->position % RX_BUFFER_LEN;
+
+    dev->state = MODBUS_STATE_IN_RECEPTION;
+    // put to zero timeout flag
+    dev->timeout = 0;
+    // start count peripheral
+    Ftm_enableInterrupt(dev->counter);
 }
 
-void ModBus_listener()
+void Modbus_uartIsr0 (void)
 {
-    uint16_t crc_code_rx;
-    uint16_t crc_code_calc;
-    uint8_t crc_flag;
-    //Uart_putChar(UART3, '3');
-    if(ModBus_interface.state==NEW_MESSAGE)
+    Modbus_Device* dev = Modbus_devs[0].dev;
+
+    if (dev != 0)
+        Modbus_uartIsr(dev);
+    else
+        return; /* TODO: ERROR */
+}
+
+void Modbus_uartIsr1 (void)
+{
+    Modbus_Device* dev = Modbus_devs[1].dev;
+
+    if (dev != 0)
+        Modbus_uartIsr(dev);
+    else
+        return; /* TODO: ERROR */
+}
+
+void Modbus_uartIsr2 (void)
+{
+    Modbus_Device* dev = Modbus_devs[2].dev;
+
+    if (dev != 0)
+        Modbus_uartIsr(dev);
+    else
+        return; /* TODO: ERROR */
+}
+
+void Modbus_uartIsr3 (void)
+{
+    Modbus_Device* dev = Modbus_devs[3].dev;
+
+    if (dev != 0)
+        Modbus_uartIsr(dev);
+    else
+        return; /* TODO: ERROR */
+}
+
+static void Modbus_counterIsr (Modbus_Device *dev)
+{
+    if (dev->state == MODBUS_STATE_IN_RECEPTION)
     {
+        dev->timeout = 1;
+        dev->state = MODBUS_STATE_NEW_MESSAGE;
+        dev->length = dev->position;
+        dev->position = 0;
+    }
+    Ftm_disableInterrupt(dev->counter);
+}
 
-        ModBus_interface.state=IDLE;
-      //  Uart_putChar(UART3, 'M');//--------------------
+void Modbus_counterIsr0 (void)
+{
+    Modbus_Device* dev = Modbus_devs[0].dev;
 
-        crc_code_rx=(ModBus_interface.buffer.Raw[ModBus_interface.length-2]<<8)|(ModBus_interface.buffer.Raw[ModBus_interface.length-1]);
-        crc_code_calc=CRC16_Check(ModBus_interface.buffer.Raw,ModBus_interface.length-2);
-        crc_flag=0;
+    if (dev != 0)
+        Modbus_counterIsr(dev);
+    else
+        return; /* TODO: ERROR */
+}
 
-        if(crc_code_calc==crc_code_rx)	crc_flag=1;
-        //check CRC16 and parity error occured
+void Modbus_counterIsr1 (void)
+{
+    Modbus_Device* dev = Modbus_devs[1].dev;
 
-        if((!ModBus_interface.error_parity_flag)&&(crc_flag))
-        {//se non ci sono errori
-        //LED_RED_ON();
-        ModBus_analizeFrame();
-        //TODO: analizza il paccheto
+    if (dev != 0)
+        Modbus_counterIsr(dev);
+    else
+        return; /* TODO: ERROR */
+}
+
+void Modbus_counterIsr2 (void)
+{
+    Modbus_Device* dev = Modbus_devs[2].dev;
+
+    if (dev != 0)
+        Modbus_counterIsr(dev);
+    else
+        return; /* TODO: ERROR */
+}
+
+void Modbus_counterIsr3 (void)
+{
+    Modbus_Device* dev = Modbus_devs[3].dev;
+
+    if (dev != 0)
+        Modbus_counterIsr(dev);
+    else
+        return; /* TODO: ERROR */
+}
+
+void Modbus_listener (Modbus_Device *dev)
+{
+    uint16_t crcCodeRx;
+    uint16_t crcCodeCalc;
+    bool crcFlag = FALSE;
+
+    if (dev->state == MODBUS_STATE_NEW_MESSAGE)
+    {
+        dev->state = MODBUS_STATE_IDLE;
+
+        crcCodeRx = (dev->buffer.raw[dev->length-2] << 2) |
+                    (dev->buffer.raw[dev->length-1]);
+        crcCodeCalc = Modbus_crcCheck(dev->buffer.raw,dev->length-2);
+
+        if (crcCodeCalc == crcCodeRx)  crcFlag = 1;
+
+        /* Check CRC16 and parity error */
+        if ((!dev->errorParity) && (crcFlag))
+        {
+            /* If there isn't error */
+            Modbus_analizeFrame(dev);
         }
-        //Uart_sendData (UART0,ModBus_interface.buffer.Raw,ModBus_interface.length);
-        //LED_RED_ON();
-
-        ModBus_interface.error_parity_flag=0;
+        dev->errorParity = 0;
     }
 
-	if(ModBus_interface.Log_erroro!=NO_ERROR)
-	{
-    ModBus_interface.buffer.get_Field.Function|=0x80;
-    ModBus_interface.buffer.get_Field.Data[0]=ModBus_interface.Log_erroro;
-    crc_code_calc=CRC16_Check(ModBus_interface.buffer.Raw,3);
-    ModBus_interface.buffer.get_Field.Data[1]=U16_H(crc_code_calc);
-    ModBus_interface.buffer.get_Field.Data[2]=U16_L(crc_code_calc);
-    //Gpio_clear (ModBus_interface.DE);
-    Uart_sendData (ModBus_interface.uart_handler,ModBus_interface.buffer.Raw,5);
-    //Gpio_set (ModBus_interface.DE);
-    ModBus_interface.Log_erroro=NO_ERROR;
+    if (dev->logicError != MODBUS_LOGICERROR_NO_ERROR)
+    {
+        dev->buffer.field.function |= 0x80;
+        dev->buffer.field.data[0] = dev->logicError;
+        crcCodeCalc = Modbus_crcCheck(dev->buffer.raw,3);
+        dev->buffer.field.data[1] = U16_H(crcCodeCalc);
+        dev->buffer.field.data[2] = U16_L(crcCodeCalc);
+        Uart_sendData(dev->com,dev->buffer.raw,5);
+        dev->logicError = MODBUS_LOGICERROR_NO_ERROR;
     }
-
 }
 
-uint16_t CRC16_Check(uint8_t *head,uint8_t len){
-
-	uint8_t comb_val;
-	uint16_t crc = 0xFFFF;
-	for(uint8_t n=0;n<len;++n){
-			comb_val = (crc>>8) ^ head[n];
-			crc = (crc<<8) ^ modbus_16_tbl[comb_val & 0x00FF];
-	}
-	return (uint16_t)crc;
-}
-
-
-
-void ModBus_analizeFrame(void)
+uint16_t Modbus_get (Modbus_Device *dev, uint8_t position)
 {
-    uint16_t mem_pos;
-    uint16_t num_word;
-    uint16_t crc_code;
-    uint8_t num_byte;
-    uint16_t i;
-    uint16_t j;
+    if (position > (LOCCIONI_MODBUS_MAPSIZE-1)) return 0;
 
-    uint8_t app=ModBus_interface.buffer.get_Field.Address;
-
-    if((app==0)||(app==ModBus_interface.ID))
-    {
-    switch (ModBus_interface.buffer.get_Field.Function)
-    {
-    case 3:
-    case 4: //request 16 bit data register
-        mem_pos=SET_VAR16(ModBus_interface.buffer.get_Field.Data);
-        num_word=SET_VAR16(&ModBus_interface.buffer.get_Field.Data[2]);//location 2-3
-        num_byte=num_word*2;
-        if((mem_pos+num_word)>MAX_MAP_ADDRESS)
-        {
-        ModBus_sendLogicalError(ILLEGAL_DATA_ADDRESS);
-        return;
-        }
-
-        //start to compile transmissing buffer
-        ModBus_interface.buffer.get_Field.Data[0]=num_byte;
-        j=1;//start pos
-
-        for(i=mem_pos;i<mem_pos+num_word;i++)
-        {
-	    //LED_BLUE_ON();
-	    ModBus_interface.buffer.get_Field.Data[j]=U16_H(*Map[i]);
-	    ModBus_interface.buffer.get_Field.Data[j+1]=U16_L(*Map[i]);
-	    j=j+2;
-        }
-        //calculate and put in the message the CRC message code
-        crc_code=CRC16_Check(ModBus_interface.buffer.Raw,num_byte+3);//add two address and function byte and #byte
-        ModBus_interface.buffer.get_Field.Data[j]=U16_H(crc_code);
-        ModBus_interface.buffer.get_Field.Data[j+1]=U16_L(crc_code);
-        ModBus_interface.length=num_byte+5; //2 crc16 byte + address+function+#byte
-        Uart_sendData (ModBus_interface.uart_handler,ModBus_interface.buffer.Raw,ModBus_interface.length);
-        break;
-
-    case 5:
-
-        break;
-
-    case 6://set a single 16 bit var
-        mem_pos=SET_VAR16(ModBus_interface.buffer.get_Field.Data);
-        *Map[mem_pos]=SET_VAR16(&ModBus_interface.buffer.get_Field.Data[2]);
-        //response with the same trasmitted message
-        Uart_sendData (ModBus_interface.uart_handler,ModBus_interface.buffer.Raw,ModBus_interface.length);
-        break;
-
-    case 7://read status
-        ModBus_interface.buffer.get_Field.Data[0]=STATUS;
-        crc_code=CRC16_Check(ModBus_interface.buffer.Raw,3);//add two address and function byte
-        ModBus_interface.buffer.get_Field.Data[0]=U16_H(crc_code);
-        ModBus_interface.buffer.get_Field.Data[1]=U16_L(crc_code);
-        ModBus_interface.length=5; //2 crc16 byte + address+function
-        Uart_sendData (ModBus_interface.uart_handler,ModBus_interface.buffer.Raw,ModBus_interface.length);
-        break;
-
-    case 16://set a multiple 16 bit var
-
-        mem_pos=SET_VAR16(&ModBus_interface.buffer.get_Field.Data[0]); //location 0-1
-        num_word=SET_VAR16(&ModBus_interface.buffer.get_Field.Data[2]);//locatio 2-3
-        num_byte=ModBus_interface.buffer.get_Field.Data[4];//locatio 4
-        //check address error
-        if((mem_pos+num_word)>MAX_MAP_ADDRESS)
-        {
-		ModBus_sendLogicalError(ILLEGAL_DATA_ADDRESS);
-		return;
-        }
-
-        j=5;//start location
-
-        for(i=mem_pos;i<mem_pos+num_word;i++)
-        {
-        *Map[i]=SET_VAR16(&ModBus_interface.buffer.get_Field.Data[j]);
-        j=j+2;
-        }
-
-        ModBus_interface.buffer.get_Field.Data[2]=U16_H(num_word);
-        ModBus_interface.buffer.get_Field.Data[3]=U16_L(num_word);
-        crc_code=CRC16_Check(ModBus_interface.buffer.Raw,6);//add two address and function byte
-        ModBus_interface.buffer.get_Field.Data[4]=U16_H(crc_code);
-        ModBus_interface.buffer.get_Field.Data[5]=U16_L(crc_code);
-        ModBus_interface.length=8; //2 crc16 byte + address+function
-        Uart_sendData (ModBus_interface.uart_handler,ModBus_interface.buffer.Raw,ModBus_interface.length);
-
-        break;
-
-    case 17:
-        break;
-
-	}
-	}
+    return dev->map[position];
 }
 
-void ModBus_sendLogicalError(ModBus_L_Error_Type error)
+void Modbus_set (Modbus_Device *dev, uint8_t position, uint16_t value)
 {
-	ModBus_interface.Log_erroro=error;
+    if (position > (LOCCIONI_MODBUS_MAPSIZE-1)) return;
+
+    dev->map[position] = value;
 }
 
-static unsigned short modbus_16_tbl[] =
+
+static unsigned short Modbus_crc16_tbl[] =
 {
 0x0000, 0xC1C0, 0x81C1, 0x4001, 0x01C3, 0xC003, 0x8002, 0x41C2,
 0x01C6, 0xC006, 0x8007, 0x41C7, 0x0005, 0xC1C5, 0x81C4, 0x4004,

@@ -1,4 +1,5 @@
 /******************************************************************************
+ * Modbus Library
  * Copyright (C) 2015-2016 AEA s.r.l. Loccioni Group - Elctronic Design Dept.
  *
  * Authors:
@@ -29,129 +30,153 @@
 
 #include "libohiboard.h"
 
+/**
+ * In this file you must define the MAP information:
+ *     #define LOCCIONI_MODBUS_MAPSIZE NNN
+ */
+#include "board.h"
+
 #define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.1"
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_M   1
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_m   1
 #define LOCCIONI_MODBUS_LIBRARY_TIME        0
 
-//define costant
 #define RX_BUFFER_LEN 30
-
-static unsigned short modbus_16_tbl[];
 
 typedef enum
 {
-    RS232,
-	RS485
-}PhysicalLayer_Type;
+    MODBUS_PHYSICALTYPE_RS232,
+    MODBUS_PHYSICALTYPE_RS485
+} Modbus_PhysicalType;
 
-//define reciver buffer type
-typedef union //RX_buffer
+/**
+ * Define receiver buffer type
+ */
+typedef union
 {
-    uint8_t Raw[RX_BUFFER_LEN];
+    uint8_t raw[RX_BUFFER_LEN];
 
     struct
     {
-	    uint8_t Address;
-	    uint8_t Function;
-	    uint8_t Data[RX_BUFFER_LEN-2];
-    }get_Field;
+	    uint8_t address;
+	    uint8_t function;
+	    uint8_t data[RX_BUFFER_LEN-2];
+    }field;
 
-} ModBus_RX_buffer_Type;
+} Modbus_RxBuffer;
 
-//define logical error type
+/**
+ * Define logical error type
+ */
 typedef enum
 {
-    NO_ERROR			=0,
-    ILLEGAL_FUNCTION	=1,
-    ILLEGAL_DATA_ADDRESS=2,
-    ILLEGAL_DATA_VALUE	=3,
-    NEG_ACK				=7,
-} ModBus_L_Error_Type;
+    MODBUS_LOGICERROR_NO_ERROR             = 0,
+    MODBUS_LOGICERROR_ILLEGAL_FUNCTION     = 1,
+    MODBUS_LOGICERROR_ILLEGAL_DATA_ADDRESS = 2,
+    MODBUS_LOGICERROR_ILLEGAL_DATA_VALUE   = 3,
+    MODBUS_LOGICERROR_NEG_ACK              = 7,
+} Modbus_LogicError;
 
-//define trasmission mode type
+/**
+ * Define transmission mode type
+ */
 typedef enum
 {
-    RTU_T_Mode,
-    ASCII_T_TMode,
-} ModBus_TM_Type;
+    MODBUS_TRANSMISSIONMODE_RTU,
+    MODBUS_TRANSMISSIONMODE_ASCII,
+} Modbus_TransmissionMode;
 
-//define Mod Bus state type
+/**
+ * Define Modbus state type
+ */
 typedef enum
 {
-    IDLE,
-    NEW_MESSAGE,
-    IN_RECEPTION,
-    PARITY_ERROR,
-    SYNTAX_ERROR,
-    CRCL_ERROR
-}ModBus_State_Type;
+    MODBUS_STATE_IDLE,
+    MODBUS_STATE_NEW_MESSAGE,
+    MODBUS_STATE_IN_RECEPTION,
+    MODBUS_STATE_PARITY_ERROR,
+    MODBUS_STATE_SYNTAX_ERROR,
+    MODBUS_STATE_CRC_ERROR
+}Modbus_State;
 
-//define device type
+/**
+ * Define device type
+ */
 typedef enum
 {
-    MASTER_Device,
-    SLAVE_Device,
-}ModBus_Device_Type;
+    MODBUS_DEVICETYPE_MASTER,
+    MODBUS_DEVICETYPE_SLAVE,
+}Modbus_DeviceType;
 
-//define serial configuration
+/**
+ * Define serial configuration
+ */
 typedef enum
 {
-    S1_D8_Odd_Stop1,  //1 bit start,8 bit data, Odd parity, 1 stop bit
-}ModBus_Serial_Config_Type;
+    MODBUS_SERIALCONFIG_1_8_1_ODD,  /**< 1 start, 8 data, Odd parity, 1 stop. */
+} Modbus_SerialConfig;
 
-//define
-typedef struct _Modbus_Config_Type
+/**
+ * Define errors for modbus
+ */
+typedef enum
 {
-    ModBus_Device_Type D_Type;
+    MODBUS_ERRORS_NO_ERROR,
+    MODBUS_ERRORS_NO_FREE_DEVICE,
+    MODBUS_ERRORS_UART_OPEN,
+} Modbus_Errors;
 
-    ModBus_TM_Type T_Mode;
-
-    uint32_t Baudrate;
-
-    ModBus_Serial_Config_Type Serial_Config;
-
-    Uart_DeviceHandle COM;
-
-    Ftm_DeviceHandle Counter;
-
-    PhysicalLayer_Type PLayer;
-
-
-
-    Uart_RxPins RX;
-    Uart_TxPins	TX;
-    Gpio_Pins DE;
-
-    uint8_t ID;
-
-}Modbus_Config_Type;
-
-
-typedef struct _Mod_Bus_handler
+/**
+ * Define all the parameters to configure Modbus.
+ */
+typedef struct _Modbus_Config
 {
-    Modbus_Config_Type *config;
-    ModBus_State_Type state;
-    uint8_t interface_is_set;
-    uint8_t timeout_flag;
-    uint8_t error_parity_flag;
-    Ftm_DeviceHandle ftm_Handler;
-    Uart_DeviceHandle uart_handler;
-    Gpio_Pins DE;
+    Modbus_DeviceType type;               /**< Select the type of the device. */
 
-    ModBus_RX_buffer_Type buffer;
-    uint8_t pos;
+    Modbus_TransmissionMode txMode;            /**< The type of transmission. */
+
+    Ftm_DeviceHandle counter;   /**< Timer device handler for delay counting. */
+
+    Uart_DeviceHandle com;                           /**< UART device handle. */
+    Uart_RxPins rx;
+    Uart_TxPins	tx;
+    Gpio_Pins   de;
+    Modbus_PhysicalType phy;            /**< Physical type for communication. */
+    uint32_t baudrate;                /**< Baudrate for serial communication. */
+    Modbus_SerialConfig comConfig;
+
+    uint8_t id;                                  /**< Id of the current node. */
+
+} Modbus_Config;
+
+typedef struct _Modbus_Device
+{
+    Ftm_DeviceHandle counter;   /**< Timer device handler for delay counting. */
+
+    Uart_DeviceHandle com;                           /**< UART device handle. */
+    Gpio_Pins de;
+
+    uint8_t id;                                  /**< Id of the current node. */
+
+    Modbus_State state;
+    Modbus_LogicError logicError;
+    uint8_t errorParity;
+
+    uint8_t position;
+
+    Modbus_RxBuffer buffer;
     uint8_t length;
-    uint8_t ID;
-    ModBus_L_Error_Type Log_erroro;
-}ModBus_handler;
+    uint8_t timeout;
 
-extern ModBus_handler ModBus_interface;
+    uint8_t status;
+    uint16_t map[LOCCIONI_MODBUS_MAPSIZE];
 
-System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config);
-void ModBus_listener(void);
-uint16_t CRC16_Check(uint8_t *head,uint8_t len);
-void ModBus_analizeFrame(void);
-void ModBus_sendLogicalError(ModBus_L_Error_Type error);
+} Modbus_Device;
+
+Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config);
+void Modbus_listener (Modbus_Device *dev);
+
+uint16_t Modbus_get (Modbus_Device *dev, uint8_t position);
+void Modbus_set (Modbus_Device *dev, uint8_t position, uint16_t value);
 
 #endif /* __LOCCIONI_MODBUS_H */
