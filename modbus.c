@@ -29,13 +29,10 @@
  *
  */
 
-//#include "MOD_BUS.h"
-//#include "ftm.h"
-//#include "uart.h"
+
 #include "libohiboard.h"
 #include "modbus.h"
 #include "var_mapping.h"
-#include "configuration.h"
 
 
 #define SET_VAR16(X)    (*X<<8&0xFF00)|*(X+1)
@@ -90,6 +87,8 @@ System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
         ModBus_interface.DE=Bus_config->DE;
         Gpio_set (ModBus_interface.DE);
     }
+	else
+    	ModBus_interface.DE=GPIO_PINS_NONE;
 
 
 //open serial interface
@@ -103,6 +102,8 @@ System_Errors ModBus_inizialize(Modbus_Config_Type *Bus_config)
     error=Uart_open (Bus_config->COM, Int_function, &COM_config);
 #endif
 
+
+//    error=Uart_open (Bus_config->COM, Int_function,&COM_config);
     if(error) return error;
 
     ModBus_interface.config=Bus_config;

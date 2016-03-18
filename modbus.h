@@ -1,7 +1,8 @@
-/* Copyright (C) 2014-2015 A. C. Open Hardware Ideas Lab
+/******************************************************************************
+ * Copyright (C) 2015-2016 AEA s.r.l. Loccioni Group - Elctronic Design Dept.
  *
  * Authors:
- *  Matteo Civale <matteo.civale@gmail.com>
+ *  Matteo Civale <m.civale@loccioni.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -20,24 +21,18 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
+ *
  ******************************************************************************/
 
-/**
- * @file modbus.h
- * @author Matteo Civale <matteo.civale@gmail.com>
- * @brief modbus  definition for KL25Z4 and FRDM-KL25Z.
- */
-#ifndef MOD_BUS_H_
-#define MOD_BUS_H_
+#ifndef __LOCCIONI_MODBUS_H
+#define __LOCCIONI_MODBUS_H
 
-//-------------------------------------------------------------------
-//void (*function_vector[10])(int u);
-//-------------------------------------------------------------------
-
-
-
-//include library
 #include "libohiboard.h"
+
+#define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.1"
+#define LOCCIONI_MODBUS_LIBRARY_VERSION_M   1
+#define LOCCIONI_MODBUS_LIBRARY_VERSION_m   1
+#define LOCCIONI_MODBUS_LIBRARY_TIME        0
 
 //define costant
 #define RX_BUFFER_LEN 30
@@ -159,4 +154,4 @@ uint16_t CRC16_Check(uint8_t *head,uint8_t len);
 void ModBus_analizeFrame(void);
 void ModBus_sendLogicalError(ModBus_L_Error_Type error);
 
-#endif /* MOD_BUS_H_ */
+#endif /* __LOCCIONI_MODBUS_H */
