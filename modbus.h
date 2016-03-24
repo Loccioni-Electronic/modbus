@@ -34,14 +34,25 @@
  * In this file you must define the MAP information:
  *     #define LOCCIONI_MODBUS_MAPSIZE NNN
  */
-#include "board.h"
+//#include "board.h"
 
 #define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.1"
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_M   1
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_m   1
 #define LOCCIONI_MODBUS_LIBRARY_TIME        0
 
-#define RX_BUFFER_LEN 30
+#define ENABLE_DMA_TRANSFER 0  //to improve velocity set to 1 and include DMA
+
+
+#if ENABLE_DMA_TRANSFER
+ #include "dma.h"
+#endif
+
+
+
+
+#define RX_BUFFER_LEN 300
+#define LOCCIONI_MODBUS_MAPSIZE 110
 
 typedef enum
 {
@@ -146,7 +157,9 @@ typedef struct _Modbus_Config
     Modbus_SerialConfig comConfig;
 
     uint8_t id;                                  /**< Id of the current node. */
-
+#if ENABLE_DMA_TRANSFER
+    dmaConfigurationType dmaConfig;
+#endif
 } Modbus_Config;
 
 typedef struct _Modbus_Device
@@ -170,6 +183,10 @@ typedef struct _Modbus_Device
 
     uint8_t status;
     uint16_t map[LOCCIONI_MODBUS_MAPSIZE];
+
+#if ENABLE_DMA_TRANSFER
+    ChannelType dmaCh;
+#endif
 
 } Modbus_Device;
 

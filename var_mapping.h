@@ -32,7 +32,7 @@
 #define VAR_MAPPING_H_
 #include "libohiboard.h"
 
-#define MEM_MAP_LEN 11
+#define MEM_MAP_LEN 110 //11
 
 #define MAX_MAP_ADDRESS  MEM_MAP_LEN
 #define MIN_MAP_ADDRESS 	0

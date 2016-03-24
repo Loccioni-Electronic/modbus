@@ -34,6 +34,12 @@
 #include "modbus.h"
 //#include "var_mapping.h"
 
+
+
+
+
+
+
 static unsigned short Modbus_crc16_tbl[];
 
 #define SET_VAR16(X)    (*X<<8&0xFF00)|*(X+1)
@@ -42,6 +48,7 @@ static unsigned short Modbus_crc16_tbl[];
 #define POL_G           0xA001//generator polynomial
 
 #define MODBUS_MAX_DEVICE     4
+
 
 void Modbus_uartIsr0 (void);
 void Modbus_uartIsr1 (void);
@@ -129,7 +136,7 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
             dev->buffer.field.data[j] = U16_H(crcCode);
             dev->buffer.field.data[j+1] = U16_L(crcCode);
             dev->length = numByte + 5; // 2 crc16 byte + address+function+#byte
-            Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+              // Uart_sendData(dev->com,dev->buffer.raw,dev->length);
             break;
         case 5:
 
@@ -139,7 +146,7 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
             memPosition = SET_VAR16(dev->buffer.field.data);
             dev->map[memPosition] = SET_VAR16(&dev->buffer.field.data[2]);
             // response with the same trasmitted message
-            Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+              // Uart_sendData(dev->com,dev->buffer.raw,dev->length);
             break;
 
         case 7: // read status
@@ -149,7 +156,7 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
             dev->buffer.field.data[1] = U16_H(crcCode);
             dev->buffer.field.data[2] = U16_L(crcCode);
             dev->length = 5; //2 crc16 byte + address+function
-            Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+            //   Uart_sendData(dev->com,dev->buffer.raw,dev->length);
             break;
 
         case 16: //set a multiple 16 bit var
@@ -180,12 +187,20 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
             dev->buffer.field.data[4] = U16_H(crcCode);
             dev->buffer.field.data[5] = U16_L(crcCode);
             dev->length = 8; // 2 crc16 byte + address+function
-            Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+               // Uart_sendData(dev->com,dev->buffer.raw,dev->length);
             break;
 
         case 17:
             break;
         }
+#if !ENABLE_DMA_TRANSFER
+        Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+#else
+        /* Set and start DMA transfer */
+
+
+
+#endif
     }
 }
 
@@ -193,8 +208,8 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
 {
     Uart_Config comConfig;
     Ftm_Config counterConfig;
-    System_Errors error;
-    uint8_t position = 0, i;
+    System_Errors error=0;
+    uint8_t position = 0,i;
     bool isFreeDevice = FALSE;
 
     /* Search free modbus device */
@@ -206,6 +221,7 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
             Modbus_devs[i].enabled = TRUE;
             Modbus_devs[i].dev = dev;
             isFreeDevice = TRUE;
+            break;
         }
     }
 
@@ -248,6 +264,8 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
 
     /* Open serial interface */
     comConfig.callbackRx = Modbus_devs[position].uartIsr;
+    comConfig.callbackTx=0;
+
     error = Uart_open (config->com, &comConfig);
 
     if (error != ERRORS_NO_ERROR) return MODBUS_ERRORS_UART_OPEN;
@@ -272,6 +290,32 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
     dev->counter = config->counter;
 
     dev->id = config->id;
+
+#if ENBLE_DMA_TRANSFER
+    dev->dmaConfig ={
+                      .channel             =DMA_CHANNEL_0,
+                      .surce               =UART3_TRANSMIT,
+
+                      .sourceAddress       =(uint32_t)stringa,
+                      .destinationAddress  =(uint32_t)&UART3_D,
+
+                      .sourceOff           =0x01,
+                      .destinationOff      =0x00,
+
+                      .sSize               =DMA_8BIT,
+                      .dSize               =DMA_8BIT,
+
+                      .nByteforReq         =1,
+
+                      .nOfCycle            =0x0A,
+                      .enableTimerTrig     =FALSE,
+
+                      .lsAdjust            =0,
+                      .ldAdjust            =0,
+
+                      //.pHandler            =UART3,
+                    };
+#endif
 
     return MODBUS_ERRORS_NO_ERROR;
 }
@@ -343,6 +387,7 @@ static void Modbus_counterIsr (Modbus_Device *dev)
         dev->state = MODBUS_STATE_NEW_MESSAGE;
         dev->length = dev->position;
         dev->position = 0;
+        Gpio_toggle(GPIO_PINS_PTB0);
     }
     Ftm_disableInterrupt(dev->counter);
 }
@@ -397,7 +442,7 @@ void Modbus_listener (Modbus_Device *dev)
     {
         dev->state = MODBUS_STATE_IDLE;
 
-        crcCodeRx = (dev->buffer.raw[dev->length-2] << 2) |
+        crcCodeRx = (dev->buffer.raw[dev->length-2] << 8) |
                     (dev->buffer.raw[dev->length-1]);
         crcCodeCalc = Modbus_crcCheck(dev->buffer.raw,dev->length-2);
 
