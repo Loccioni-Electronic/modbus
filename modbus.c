@@ -32,13 +32,6 @@
  */
 
 #include "modbus.h"
-//#include "var_mapping.h"
-
-
-uint8_t stringa[]="matteo civale";
-
-
-
 
 static unsigned short Modbus_crc16_tbl[];
 
