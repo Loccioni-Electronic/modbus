@@ -41,7 +41,7 @@
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_m   1
 #define LOCCIONI_MODBUS_LIBRARY_TIME        0
 
-#define ENABLE_DMA_TRANSFER 0  //to improve velocity set to 1 and include DMA
+#define ENABLE_DMA_TRANSFER 1  //to improve velocity set to 1 and include DMA
 
 
 #if ENABLE_DMA_TRANSFER
@@ -157,8 +157,11 @@ typedef struct _Modbus_Config
     Modbus_SerialConfig comConfig;
 
     uint8_t id;                                  /**< Id of the current node. */
+
+
 #if ENABLE_DMA_TRANSFER
-    dmaConfigurationType dmaConfig;
+    Dma_ChannelType dmaCh;
+    Dma_DeviceHandle dma;
 #endif
 } Modbus_Config;
 
@@ -185,8 +188,11 @@ typedef struct _Modbus_Device
     uint16_t map[LOCCIONI_MODBUS_MAPSIZE];
 
 #if ENABLE_DMA_TRANSFER
-    ChannelType dmaCh;
+    dma_ConfigType dmaConfig;
+    Dma_DeviceHandle dma;
 #endif
+
+
 
 } Modbus_Device;
 
