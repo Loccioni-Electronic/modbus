@@ -61,7 +61,9 @@ void Modbus_counterIsr2 (void);
 void Modbus_counterIsr3 (void);
 
 void Modbus_dmaStopIsr0 (void);
-
+void Modbus_dmaStopIsr1 (void);
+void Modbus_dmaStopIsr2 (void);
+void Modbus_dmaStopIsr3 (void);
 
 typedef struct Modbus_RegisteredDevice
 {
@@ -70,14 +72,15 @@ typedef struct Modbus_RegisteredDevice
     void (* counterIsr)(void);
     bool enabled;
     void (* dmaStopIsr)(void);
+
 } Modbus_RegisteredDevice;
 
 static Modbus_RegisteredDevice Modbus_devs[] =
 {
         {0,Modbus_uartIsr0,Modbus_counterIsr0,FALSE, Modbus_dmaStopIsr0},
-        {0,Modbus_uartIsr1,Modbus_counterIsr1,FALSE, 0},
-        {0,Modbus_uartIsr2,Modbus_counterIsr2,FALSE, 0},
-        {0,Modbus_uartIsr3,Modbus_counterIsr3,FALSE, 0},
+        {0,Modbus_uartIsr1,Modbus_counterIsr1,FALSE, Modbus_dmaStopIsr1},
+        {0,Modbus_uartIsr2,Modbus_counterIsr2,FALSE, Modbus_dmaStopIsr2},
+        {0,Modbus_uartIsr3,Modbus_counterIsr3,FALSE, Modbus_dmaStopIsr3},
 };
 
 static uint16_t Modbus_crcCheck (uint8_t *head, uint8_t length)
@@ -198,11 +201,14 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
             break;
         }
 #if !ENABLE_DMA_TRANSFER
+
         Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+
 #else
         /* Set and start DMA transfer */
         dev->dmaConfig.nOfCycle=dev->length;
-        Dma_startChannel(dev->dma, dev->dmaConfig.channel, dev->length,  &dev->dmaConfig);
+        Dma_startChannel(dev->dma, &dev->dmaConfig);
+
 #endif
     }
 }
@@ -296,11 +302,10 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
 
 #if ENABLE_DMA_TRANSFER
 
-    dev->dmaConfig.channel             = config->dmaCh;//DMA_CHANNEL_0,
-    dev->dmaConfig.requestSource       = DMA_REQ_UART_TRANSMIT;
+    dev->dmaChannel                    = config->dmaCh;
 
-    dev->dmaConfig.sourceAddress       = (uint32_t)dev->buffer.raw;//stringa,
-    dev->dmaConfig.destinationAddress  = (uint32_t)Uart_getRxRegisterAddress(config->com);//&UART3_D,
+    dev->dmaConfig.sourceAddress       = (uint32_t)dev->buffer.raw;
+    dev->dmaConfig.destinationAddress  = (uint32_t)Uart_getRxRegisterAddress(config->com);
 
     dev->dmaConfig.sourceOff           = 0x01;
     dev->dmaConfig.destinationOff      = 0x00;
@@ -308,7 +313,7 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
     dev->dmaConfig.sSize               = DMA_8BIT;
     dev->dmaConfig.dSize               = DMA_8BIT;
 
-    dev->dmaConfig.nByteforReq         = 1;//0x1;
+    dev->dmaConfig.nByteforReq         = 1;
 
     dev->dmaConfig.nOfCycle            = 0;
     dev->dmaConfig.enableTimerTrig     = FALSE;
@@ -318,9 +323,10 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
 
     dev->dmaConfig.pHandler            = config->com;
 
-    /* */
+    /* Save dma device handler */
     dev->dma=config->dma;
-    Dma_init(dev->dma, &dev->dmaConfig, Modbus_dmaStopIsr0);
+
+    Dma_init(dev->dma, dev->dmaConfig.pHandler, DMA_REQ_UART_TRANSMIT, dev->dmaChannel, Modbus_devs[position].dmaStopIsr);
 
 #endif
 
@@ -394,7 +400,6 @@ static void Modbus_counterIsr (Modbus_Device *dev)
         dev->state = MODBUS_STATE_NEW_MESSAGE;
         dev->length = dev->position;
         dev->position = 0;
-        Gpio_toggle(GPIO_PINS_PTB0);
     }
     Ftm_disableInterrupt(dev->counter);
 }
@@ -440,10 +445,31 @@ void Modbus_counterIsr3 (void)
 }
 
 
-void Modbus_dmaStopIsr0 (void)
+void Modbus_dmaStopIsr0(void)
 {
 #if ENABLE_DMA_TRANSFER
     Dma_disableChannel(Modbus_devs[0].dev->dma, Modbus_devs[0].dev->dmaConfig.channel);
+#endif
+}
+
+void Modbus_dmaStopIsr1(void)
+{
+#if ENABLE_DMA_TRANSFER
+    Dma_disableChannel(Modbus_devs[1].dev->dma, Modbus_devs[1].dev->dmaConfig.channel);
+#endif
+}
+
+void Modbus_dmaStopIsr2(void)
+{
+#if ENABLE_DMA_TRANSFER
+    Dma_disableChannel(Modbus_devs[2].dev->dma, Modbus_devs[2].dev->dmaConfig.channel);
+#endif
+}
+
+void Modbus_dmaStopIsr3(void)
+{
+#if ENABLE_DMA_TRANSFER
+    Dma_disableChannel(Modbus_devs[3].dev->dma, Modbus_devs[3].dev->dmaConfig.channel);
 #endif
 }
 

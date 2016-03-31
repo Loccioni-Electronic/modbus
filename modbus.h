@@ -188,6 +188,7 @@ typedef struct _Modbus_Device
     uint16_t map[LOCCIONI_MODBUS_MAPSIZE];
 
 #if ENABLE_DMA_TRANSFER
+    Dma_ChannelType dmaChannel;
     dma_ConfigType dmaConfig;
     Dma_DeviceHandle dma;
 #endif
