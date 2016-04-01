@@ -295,7 +295,7 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
 
 #if ENABLE_DMA_TRANSFER
 
-    dev->dmaChannel                    = config->dmaCh;
+    dev->dmaConfig.channel             = config->dmaCh;
 
     dev->dmaConfig.sourceAddress       = (uint32_t)dev->buffer.raw;
     dev->dmaConfig.destinationAddress  = (uint32_t)Uart_getRxRegisterAddress(config->com);
@@ -303,8 +303,8 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
     dev->dmaConfig.sourceOff           = 0x01;
     dev->dmaConfig.destinationOff      = 0x00;
 
-    dev->dmaConfig.sSize               = DMA_8BIT;
-    dev->dmaConfig.dSize               = DMA_8BIT;
+    dev->dmaConfig.sSize               = DMA_DATASIZE_8BIT;
+    dev->dmaConfig.dSize               = DMA_DATASIZE_8BIT;
 
     dev->dmaConfig.nByteforReq         = 1;
 
@@ -319,7 +319,7 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
     /* Save dma device handler */
     dev->dma=config->dma;
 
-    Dma_init(dev->dma, dev->dmaConfig.pHandler, DMA_REQ_UART_TRANSMIT, dev->dmaChannel, Modbus_devs[position].dmaStopIsr);
+    Dma_init(dev->dma, dev->dmaConfig.pHandler, DMA_REQ_UART_TRANSMIT, dev->dmaConfig.channel, Modbus_devs[position].dmaStopIsr);
 
 #endif
 
