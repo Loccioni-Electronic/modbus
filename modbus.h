@@ -54,7 +54,7 @@
 
 
 #define RX_BUFFER_LEN 300
-#define LOCCIONI_MODBUS_MAPSIZE 110
+#define LOCCIONI_MODBUS_MAPSIZE 420
 
 typedef enum
 {
@@ -203,7 +203,7 @@ typedef struct _Modbus_Device
 Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config);
 void Modbus_listener (Modbus_Device *dev);
 
-uint16_t Modbus_get (Modbus_Device *dev, uint8_t position);
-void Modbus_set (Modbus_Device *dev, uint8_t position, uint16_t value);
+uint16_t Modbus_get (Modbus_Device *dev, uint16_t position);
+void Modbus_set (Modbus_Device *dev, uint16_t position, uint16_t value);
 
 #endif /* __LOCCIONI_MODBUS_H */

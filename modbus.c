@@ -503,14 +503,14 @@ void Modbus_listener (Modbus_Device *dev)
     }
 }
 
-uint16_t Modbus_get (Modbus_Device *dev, uint8_t position)
+uint16_t Modbus_get (Modbus_Device *dev, uint16_t position)
 {
     if (position > (LOCCIONI_MODBUS_MAPSIZE-1)) return 0;
 
     return dev->map[position];
 }
 
-void Modbus_set (Modbus_Device *dev, uint8_t position, uint16_t value)
+void Modbus_set (Modbus_Device *dev, uint16_t position, uint16_t value)
 {
     if (position > (LOCCIONI_MODBUS_MAPSIZE-1)) return;
 
