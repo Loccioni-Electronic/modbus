@@ -42,7 +42,8 @@
 #define LOCCIONI_MODBUS_LIBRARY_TIME        0
 
 /* The dma transfer is supported only for k12d5 and k64f12 uController */
-#define ENABLE_DMA_TRANSFER 1  //to improve velocity set to 1 and include DMA
+// TODO: Insert in the preprocessor variables
+//#define ENABLE_DMA_TRANSFER 1  //to improve velocity set to 1 and include DMA
 
 
 

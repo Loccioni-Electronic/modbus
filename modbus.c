@@ -268,7 +268,7 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
     comConfig.callbackRx = Modbus_devs[position].uartIsr;
     comConfig.callbackTx=0;
 
-    error = Uart_open (config->com, &comConfig);
+    error = Uart_open (config->com, 0, &comConfig);
 
     if (error != ERRORS_NO_ERROR) return MODBUS_ERRORS_UART_OPEN;
 
