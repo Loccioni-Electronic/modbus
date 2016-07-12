@@ -268,7 +268,18 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
     comConfig.callbackRx = Modbus_devs[position].uartIsr;
     comConfig.callbackTx=0;
 
+#if defined (LIBOHIBOARD_KL25Z4)     || \
+	defined (LIBOHIBOARD_FRDMKL25Z)  || \
+	defined (LIBOHIBOARD_K12D5)      || \
+    defined (LIBOHIBOARD_K64F12)     || \
+	defined (LIBOHIBOARD_FRDMK64F)   || \
+	defined (LIBOHIBOARD_KV46F)      || \
+	defined (LIBOHIBOARD_TRWKV46F)
+
+    error = Uart_open (config->com, &comConfig);
+#else
     error = Uart_open (config->com, 0, &comConfig);
+#endif
 
     if (error != ERRORS_NO_ERROR) return MODBUS_ERRORS_UART_OPEN;
 
