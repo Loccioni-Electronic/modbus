@@ -528,6 +528,20 @@ void Modbus_set (Modbus_Device *dev, uint16_t position, uint16_t value)
     dev->map[position] = value;
 }
 
+Modbus_Errors Modbus_clearMemoryArea (Modbus_Device* dev, uint16_t start, uint16_t length)
+{
+  uint16_t i;
+  uint16_t last = start + length;
+
+  if (last > LOCCIONI_MODBUS_MAPSIZE - 1)
+      return MODBUS_ERRORS_WRONG_LENGTH;
+
+  for (i = start; i < last; i++)
+  {
+      Modbus_set(dev, i, 0);
+  }
+  return MODBUS_ERRORS_NO_ERROR;
+}
 
 static unsigned short Modbus_crc16_tbl[] =
 {

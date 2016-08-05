@@ -34,7 +34,7 @@
  * In this file you must define the MAP information:
  *     #define LOCCIONI_MODBUS_MAPSIZE NNN
  */
-//#include "board.h"
+#include "board.h"
 
 #define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.1"
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_M   1
@@ -46,16 +46,11 @@
 //#define ENABLE_DMA_TRANSFER 1  //to improve velocity set to 1 and include DMA
 
 
-
 #if ENABLE_DMA_TRANSFER
  #include "dma.h"
 #endif
 
-
-
-
 #define RX_BUFFER_LEN 300
-#define LOCCIONI_MODBUS_MAPSIZE 420
 
 typedef enum
 {
@@ -138,6 +133,7 @@ typedef enum
     MODBUS_ERRORS_NO_ERROR,
     MODBUS_ERRORS_NO_FREE_DEVICE,
     MODBUS_ERRORS_UART_OPEN,
+    MODBUS_ERRORS_WRONG_LENGTH,
 } Modbus_Errors;
 
 /**
@@ -160,7 +156,6 @@ typedef struct _Modbus_Config
     Modbus_SerialConfig comConfig;
 
     uint8_t id;                                  /**< Id of the current node. */
-
 
 #if ENABLE_DMA_TRANSFER
     Dma_Channel dmaCh;
@@ -197,8 +192,6 @@ typedef struct _Modbus_Device
 
 #endif
 
-
-
 } Modbus_Device;
 
 Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config);
@@ -206,5 +199,8 @@ void Modbus_listener (Modbus_Device *dev);
 
 uint16_t Modbus_get (Modbus_Device *dev, uint16_t position);
 void Modbus_set (Modbus_Device *dev, uint16_t position, uint16_t value);
+
+Modbus_Errors Modbus_clearMemoryArea (Modbus_Device* dev, uint16_t start, uint16_t length);
+
 
 #endif /* __LOCCIONI_MODBUS_H */
