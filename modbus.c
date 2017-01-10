@@ -38,6 +38,9 @@ static unsigned short Modbus_crc16_tbl[];
 #define SET_VAR16(X)    (*X<<8&0xFF00)|*(X+1)
 #define U16_H(X)		(uint8_t) 0x00FF&(X>>8)
 #define U16_L(X)		(uint8_t) 0x00FF&X
+#define SET_BIT8(X,n,Y)   (X) = (uint8_t)(((X)&~(1<<(n)))|(((Y)&0x1)<<(n)))
+#define SET_BIT16(X,n,Y)  (X) = (uint16_t)(((X)&~(1<<(n)))|(((Y)&0x1)<<(n)))
+#define GET_BIT(X,n)      (((X)>>(n))&0x1)
 #define POL_G           0xA001//generator polynomial
 
 #define MODBUS_MAX_DEVICE     4
@@ -98,6 +101,7 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
 {
     uint16_t memPosition;
     uint16_t numWord;
+    uint16_t numBit;
     uint16_t crcCode;
     uint8_t numByte;
     uint16_t i,j;
@@ -108,6 +112,29 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
     {
         switch (dev->buffer.field.function)
         {
+        case 1: /*<< Read single coil or discrete input */
+        case 2:
+            memPosition = SET_VAR16(dev->buffer.field.data);
+            numBit = SET_VAR16(&dev->buffer.field.data[2]);
+            if((memPosition+numBit)>(LOCCIONI_MODBUS_MAPSIZE<<4))
+            {
+                Modbus_sendLogicalError(dev, MODBUS_LOGICERROR_ILLEGAL_DATA_ADDRESS);
+            }
+            numByte = numBit>>3;
+            if(numBit%8) numByte++;
+            dev->buffer.field.data[0] = numByte;
+            for(i= 0; i< numBit; i++)
+            {
+                SET_BIT8(dev->buffer.field.data[(i>>3)+1], i%8, GET_BIT(dev->map[(i+memPosition)>>4], (i+memPosition)%16));
+            }
+            // calculate and put in the message the CRC message code
+            // add two address and function byte and #byte
+            crcCode = Modbus_crcCheck(dev->buffer.raw,numByte+3);
+            dev->buffer.field.data[numByte+1] = U16_H(crcCode);
+            dev->buffer.field.data[numByte+2] = U16_L(crcCode);
+            dev->length = numByte + 5; // 2 crc16 byte + address+function+#byte
+            break;
+
         case 3:
         case 4: // request 16 bit data register
             memPosition = SET_VAR16(dev->buffer.field.data);
@@ -138,8 +165,21 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
             dev->length = numByte + 5; // 2 crc16 byte + address+function+#byte
               // Uart_sendData(dev->com,dev->buffer.raw,dev->length);
             break;
-        case 5:
+        case 5: /**<< Write single coil*/
+            memPosition = SET_VAR16(dev->buffer.field.data);
+            numBit = SET_VAR16(&dev->buffer.field.data[2]);
 
+            if((memPosition)>(LOCCIONI_MODBUS_MAPSIZE<<4))
+            {
+                Modbus_sendLogicalError(dev, MODBUS_LOGICERROR_ILLEGAL_DATA_ADDRESS);
+            }
+
+            if(numBit == 0xFF00)
+               SET_BIT16(dev->map[memPosition>>4], (memPosition%16), 0x1);
+            else
+               SET_BIT16(dev->map[memPosition>>4], (memPosition%16), 0x0);
+            /* Transmit the received message */
+            dev->length = 8; // 2 crc16 byte + address+function+#byte
             break;
 
         case 6: // set a single 16 bit var
@@ -158,7 +198,27 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
             dev->length = 5; //2 crc16 byte + address+function
             //   Uart_sendData(dev->com,dev->buffer.raw,dev->length);
             break;
+        case 15:/*<< Write multiple coils */
+            memPosition = SET_VAR16(dev->buffer.field.data);
+            numBit = SET_VAR16(&dev->buffer.field.data[2]); /*<< Bit number to force */
+            numByte = dev->buffer.field.data[4];
 
+            if((memPosition+numBit)>(LOCCIONI_MODBUS_MAPSIZE<<4))
+            {
+                Modbus_sendLogicalError(dev, MODBUS_LOGICERROR_ILLEGAL_DATA_ADDRESS);
+            }
+
+            for(i= 0; i< numBit; i++)
+            {
+                SET_BIT16(dev->map[(memPosition+i)>>4], (memPosition+i)%16, GET_BIT(dev->buffer.field.data[5+(i>>3)], i%8));
+            }
+            // calculate and put in the message the CRC message code
+            // add two address and function byte and #byte
+            crcCode = Modbus_crcCheck(dev->buffer.raw, 6);
+            dev->buffer.field.data[4] = U16_H(crcCode);
+            dev->buffer.field.data[5] = U16_L(crcCode);
+            dev->length = 8; // 2 crc16 byte + address+function+#byte
+            break;
         case 16: //set a multiple 16 bit var
 
             memPosition = SET_VAR16(&dev->buffer.field.data[0]); // location 0-1
