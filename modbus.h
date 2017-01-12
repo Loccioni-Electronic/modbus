@@ -199,6 +199,8 @@ void Modbus_listener (Modbus_Device *dev);
 
 uint16_t Modbus_get (Modbus_Device *dev, uint16_t position);
 void Modbus_set (Modbus_Device *dev, uint16_t position, uint16_t value);
+bool Modbus_getBit(Modbus_Device *dev, uint16_t position);
+void Modbus_setBit(Modbus_Device *dev, uint16_t position, bool value);
 
 Modbus_Errors Modbus_clearMemoryArea (Modbus_Device* dev, uint16_t start, uint16_t length);
 
