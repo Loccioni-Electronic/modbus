@@ -602,6 +602,15 @@ Modbus_Errors Modbus_clearMemoryArea (Modbus_Device* dev, uint16_t start, uint16
   }
   return MODBUS_ERRORS_NO_ERROR;
 }
+bool Modbus_getBit(Modbus_Device *dev, uint16_t position)
+{
+    return (bool)GET_BIT(dev->map[(position)>>4], (position)%16);
+}
+
+void Modbus_setBit(Modbus_Device *dev, uint16_t position, bool value)
+{
+    SET_BIT16(dev->map[position>>4], (position%16), value);
+}
 
 static unsigned short Modbus_crc16_tbl[] =
 {
