@@ -36,10 +36,10 @@
  */
 #include "board.h"
 
-#define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.1"
+#define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.2"
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_M   1
-#define LOCCIONI_MODBUS_LIBRARY_VERSION_m   1
-#define LOCCIONI_MODBUS_LIBRARY_TIME        0
+#define LOCCIONI_MODBUS_LIBRARY_VERSION_m   2
+#define LOCCIONI_MODBUS_LIBRARY_TIME        1487930195
 
 /* The dma transfer is supported only for k12d5 and k64f12 uController */
 // TODO: Insert in the preprocessor variables

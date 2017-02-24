@@ -301,7 +301,9 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
         comConfig.baudrate     = config->baudrate;
         comConfig.stop         = UART_STOPBITS_ONE;
 
-#if defined(LIBOHIBOARD_KL25Z4)
+#if defined(LIBOHIBOARD_KL15Z4)      || \
+	defined (LIBOHIBOARD_KL25Z4)     || \
+	defined (LIBOHIBOARD_FRDMKL25Z)
         comConfig.oversampling = 16;
 #endif
 	    break;
@@ -328,7 +330,8 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
     comConfig.callbackRx = Modbus_devs[position].uartIsr;
     comConfig.callbackTx=0;
 
-#if defined (LIBOHIBOARD_KL25Z4)     || \
+#if defined (LIBOHIBOARD_KL15Z4)     || \
+	defined (LIBOHIBOARD_KL25Z4)     || \
 	defined (LIBOHIBOARD_FRDMKL25Z)  || \
 	defined (LIBOHIBOARD_K12D5)      || \
     defined (LIBOHIBOARD_K64F12)     || \
