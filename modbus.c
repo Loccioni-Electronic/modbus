@@ -254,8 +254,13 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
             break;
         }
 #if !ENABLE_DMA_TRANSFER
+        Gpio_set (dev->de);
 
         Uart_sendData(dev->com,dev->buffer.raw,dev->length);
+
+        while(!Uart_isTransmissionComplete(dev->com));
+
+        Gpio_clear (dev->de);
 
 #else
         /* Set and start DMA transfer */
@@ -319,7 +324,8 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
         if(error) return error;
         dev->de = config->de;
         /* Transmission line free */
-        Gpio_set (dev->de);
+//        Gpio_set (dev->de);
+        Gpio_clear (dev->de);
     }
 	else
 	{
