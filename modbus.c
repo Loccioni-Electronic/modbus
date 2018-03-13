@@ -254,13 +254,16 @@ static void Modbus_analizeFrame (Modbus_Device *dev)
             break;
         }
 #if !ENABLE_DMA_TRANSFER
-        Gpio_set (dev->de);
+
+        if (dev->phy == MODBUS_PHYSICALTYPE_RS485)
+            Gpio_set (dev->de);
 
         Uart_sendData(dev->com,dev->buffer.raw,dev->length);
 
         while(!Uart_isTransmissionComplete(dev->com));
 
-        Gpio_clear (dev->de);
+        if (dev->phy == MODBUS_PHYSICALTYPE_RS485)
+            Gpio_clear (dev->de);
 
 #else
         /* Set and start DMA transfer */
@@ -318,6 +321,8 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
 	comConfig.rxPin = config->rx;
 	comConfig.txPin = config->tx;
 
+	// Save physical level type
+	dev->phy = config->phy;
     if (config->phy == MODBUS_PHYSICALTYPE_RS485)
     {
         error = Gpio_config (config->de, GPIO_PINS_OUTPUT);

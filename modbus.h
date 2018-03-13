@@ -36,10 +36,11 @@
  */
 #include "board.h"
 
-#define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.2"
+#define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.2.1"
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_M   1
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_m   2
-#define LOCCIONI_MODBUS_LIBRARY_TIME        1487930195
+#define LOCCIONI_MODBUS_LIBRARY_VERSION_bug 1
+#define LOCCIONI_MODBUS_LIBRARY_TIME        1520936239
 
 /* The dma transfer is supported only for k12d5 and k64f12 uController */
 // TODO: Insert in the preprocessor variables
@@ -184,6 +185,8 @@ typedef struct _Modbus_Device
 
     uint8_t status;
     uint16_t map[LOCCIONI_MODBUS_MAPSIZE];
+
+    Modbus_PhysicalType phy;            /**< Physical type for communication. */
 
 #if ENABLE_DMA_TRANSFER
 
