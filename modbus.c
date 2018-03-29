@@ -1,9 +1,11 @@
 /******************************************************************************
  * Modbus Library
- * Copyright (C) 2015-2016 AEA s.r.l. Loccioni Group - Elctronic Design Dept.
+ * Copyright (C) 2015-2018 AEA s.r.l. Loccioni Group - Elctronic Design Dept.
  *
  * Authors:
  *  Matteo Civale <m.civale@loccioni.com>
+ *  Marco Giammarini <m.giammarini@loccioni.com>
+ *  Matteo Piersantelli <m.piersantelli@am-microsystems.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +30,8 @@
 /**
  * @file modbus.c
  * @author Matteo Civale <m.civale@loccioni.com>
+ * @author Marco Giammarini <m.giammarini@loccioni.com>
+ * @author Matteo Piersantelli <m.piersantelli@am-microsystems.com>
  * @brief Modbus implementation
  */
 
@@ -297,6 +301,9 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
 
     if (!isFreeDevice) return MODBUS_ERRORS_NO_FREE_DEVICE;
 
+    // Disable interrupt during initializations
+    __disable_irq();
+
     /* set clock source */
 	comConfig.clockSource  = UART_CLOCKSOURCE_BUS;
 
@@ -408,13 +415,14 @@ Modbus_Errors Modbus_init (Modbus_Device *dev, Modbus_Config *config)
 
 #endif
 
+    // Enable interrupt
+    __enable_irq();
     return MODBUS_ERRORS_NO_ERROR;
 }
 
 static void Modbus_uartIsr (Modbus_Device *dev)
 {
     System_Errors error;
-    uint8_t id;
 
     // put the new received byte in the buffer
     error = Uart_getChar (dev->com, &dev->buffer.raw[dev->position]);

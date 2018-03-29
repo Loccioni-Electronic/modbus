@@ -1,9 +1,11 @@
 /******************************************************************************
  * Modbus Library
- * Copyright (C) 2015-2016 AEA s.r.l. Loccioni Group - Elctronic Design Dept.
+ * Copyright (C) 2015-2018 AEA s.r.l. Loccioni Group - Elctronic Design Dept.
  *
  * Authors:
  *  Matteo Civale <m.civale@loccioni.com>
+ *  Marco Giammarini <m.giammarini@loccioni.com>
+ *  Matteo Piersantelli <m.piersantelli@am-microsystems.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,11 +38,11 @@
  */
 #include "board.h"
 
-#define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.2.1"
+#define LOCCIONI_MODBUS_LIBRARY_VERSION     "1.3.0"
 #define LOCCIONI_MODBUS_LIBRARY_VERSION_M   1
-#define LOCCIONI_MODBUS_LIBRARY_VERSION_m   2
-#define LOCCIONI_MODBUS_LIBRARY_VERSION_bug 1
-#define LOCCIONI_MODBUS_LIBRARY_TIME        1520936239
+#define LOCCIONI_MODBUS_LIBRARY_VERSION_m   3
+#define LOCCIONI_MODBUS_LIBRARY_VERSION_bug 0
+#define LOCCIONI_MODBUS_LIBRARY_TIME        1522316846
 
 /* The dma transfer is supported only for k12d5 and k64f12 uController */
 // TODO: Insert in the preprocessor variables
